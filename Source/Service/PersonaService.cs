@@ -62,7 +62,9 @@ public static class PersonaService
         {
             var request = new TalkRequest(Constant.PersonaGenInstruction, pawn)
             {
-                Context = $"[Character]\n{pawnBackstory}"
+                Context = $"[Character]\n{pawnBackstory}",
+                // The reply is {persona, chattiness}, not the dialogue schema a custom response_format may force.
+                IgnoreCustomResponseFormat = true
             };
             PersonalityData personalityData = await AIService.Query<PersonalityData>(request);
 

@@ -39,6 +39,8 @@ public class TalkRequest(string prompt, Pawn initiator, Pawn recipient = null, T
     public bool IsAnnouncement => TalkType == TalkType.Announcement;
     public string ImageBase64 { get; set; }
     public string RawJsonOverride { get; set; }
+    // Set for queries whose reply shape differs from dialogue, so the custom JSON's response_format must not apply.
+    public bool IgnoreCustomResponseFormat { get; set; }
     public SleepDialogueKind SleepDialogueKind { get; set; }
     public string CausalPrompt { get; set; }
     public string Topic { get; set; }

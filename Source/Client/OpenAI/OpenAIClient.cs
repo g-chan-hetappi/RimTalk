@@ -232,9 +232,22 @@ public class OpenAIClient(
         };
 
         string baseJson = JsonUtil.SerializeJsonValue(request.ToPayload());
-        return string.IsNullOrWhiteSpace(customRequestJson)
-            ? baseJson
-            : JsonUtil.MergeJson(baseJson, customRequestJson);
+        if (string.IsNullOrWhiteSpace(customRequestJson))
+            return baseJson;
+
+        string customJson = AIService.CurrentRequest?.IgnoreCustomResponseFormat == true
+            ? RemoveResponseFormat(customRequestJson)
+            : customRequestJson;
+        return JsonUtil.MergeJson(baseJson, customJson);
+    }
+
+    // Falls back to the original JSON if it cannot be parsed, so MergeJson reports the problem as before.
+    private static string RemoveResponseFormat(string json)
+    {
+        if (JsonUtil.ParseJsonValue(json.Trim(), out _) is not Dictionary<string, object> parsed)
+            return json;
+
+        return parsed.Remove("response_format") ? JsonUtil.SerializeJsonValue(parsed) : json;
     }
 
     private List<ChatMessage> BuildMessages(List<(Role role, string message)> prefixMessages,
