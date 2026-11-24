@@ -95,117 +95,13 @@ public static class UIUtil
 
         try
         {
-            var categoryColumns = new List<string>();
-            var rows = new List<(ApiLog log, Dictionary<string, string> categories)>(apiLogs.Count);
-
-            foreach (var log in apiLogs)
-            {
-                var categoryMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-                var segments = DebugWindow.ResolvePromptSegments(log);
-                if (segments != null)
-                {
-                    foreach (var seg in segments)
-                    {
-                        if (IsExcludedExportEntry(seg)) continue;
-
-                        string name = !string.IsNullOrWhiteSpace(seg.EntryName) ? seg.EntryName.Trim() : "Entry";
-                        if (!categoryColumns.Contains(name, StringComparer.OrdinalIgnoreCase))
-                        {
-                            categoryColumns.Add(name);
-                        }
-
-                        if (!string.IsNullOrEmpty(seg.Content))
-                        {
-                            if (categoryMap.TryGetValue(name, out var existing))
-                                categoryMap[name] = existing + "\n" + seg.Content;
-                            else
-                                categoryMap[name] = seg.Content;
-                        }
-                    }
-                }
-
-                rows.Add((log, categoryMap));
-            }
-
-            var sb = new StringBuilder();
-
-            // Header
-            var headers = new List<string>
-            {
-                "CreatedTime",
-                "SpokenTime",
-                "ConversationId",
-                "Pawn",
-                "Target",
-                "Response",
-                "State",
-                "TalkType",
-                "InteractionType",
-                "Model",
-                "Tokens",
-                "ElapsedMs"
-            };
-
-            foreach (var cat in categoryColumns)
-            {
-                headers.Add($"\"{EscapeCsv(cat)}\"");
-            }
-
-            sb.AppendLine(string.Join(",", headers));
-
-            // Rows
-            foreach (var (log, categoryMap) in rows)
-            {
-                var createdTime = (log.TalkRequest != null ? log.TalkRequest.CreatedTime : log.Timestamp).ToString("yyyy-MM-dd HH:mm:ss");
-                var spokenTime = log.SpokenTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "";
-                var target = log.TargetName;
-                if (string.IsNullOrEmpty(target) && log.TalkRequest != null)
-                {
-                    var recipient = log.TalkRequest.Recipient?.LabelShort;
-                    var initiator = log.TalkRequest.Initiator?.LabelShort;
-                    if (!string.IsNullOrEmpty(recipient) && recipient != log.Name)
-                        target = recipient;
-                    else if (!string.IsNullOrEmpty(initiator) && initiator != log.Name)
-                        target = initiator;
-                    else
-                        target = "";
-                }
-                target ??= "";
-                var state = log.GetState().ToString();
-                var talkType = log.TalkRequest?.TalkType.ToString() ?? "";
-                var payload = ApiHistory.GetPayload(log) ?? log.Payload;
-                var model = payload?.Model ?? "";
-                var tokenCount = payload?.TokenCount.ToString() ?? "";
-
-                var rowValues = new List<string>
-                {
-                    $"\"{EscapeCsv(createdTime)}\"",
-                    $"\"{EscapeCsv(spokenTime)}\"",
-                    log.ConversationId.ToString(),
-                    $"\"{EscapeCsv(log.Name)}\"",
-                    $"\"{EscapeCsv(target)}\"",
-                    $"\"{EscapeCsv(log.Response)}\"",
-                    $"\"{EscapeCsv(state)}\"",
-                    $"\"{EscapeCsv(talkType)}\"",
-                    $"\"{EscapeCsv(log.InteractionType)}\"",
-                    $"\"{EscapeCsv(model)}\"",
-                    tokenCount,
-                    log.ElapsedMs.ToString()
-                };
-
-                foreach (var cat in categoryColumns)
-                {
-                    categoryMap.TryGetValue(cat, out var content);
-                    rowValues.Add($"\"{EscapeCsv(content ?? "")}\"");
-                }
-
-                sb.AppendLine(string.Join(",", rowValues));
-            }
+            string csv = BuildLogCsv(apiLogs);
 
             string fileName = $"RimTalk_Export_{DateTime.Now:yyyyMMdd_HHmmss}.csv";
             string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), fileName);
 
-            File.WriteAllText(path, sb.ToString(), new UTF8Encoding(true));
+            File.WriteAllText(path, csv, new UTF8Encoding(true));
+            ApiLogFileExporter.Save(csv);
 
             Messages.Message($"Exported to: {path}", MessageTypeDefOf.TaskCompletion, false);
         }
@@ -214,6 +110,121 @@ public static class UIUtil
             Logger.Error($"Failed to export logs: {ex.Message}");
             Messages.Message("Export failed. Check logs.", MessageTypeDefOf.NegativeEvent, false);
         }
+    }
+
+    /// <summary>
+    /// Builds the export CSV text for the given API logs.
+    /// </summary>
+    internal static string BuildLogCsv(List<ApiLog> apiLogs)
+    {
+        var categoryColumns = new List<string>();
+        var rows = new List<(ApiLog log, Dictionary<string, string> categories)>(apiLogs.Count);
+
+        foreach (var log in apiLogs)
+        {
+            var categoryMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var segments = DebugWindow.ResolvePromptSegments(log);
+            if (segments != null)
+            {
+                foreach (var seg in segments)
+                {
+                    if (IsExcludedExportEntry(seg)) continue;
+
+                    string name = !string.IsNullOrWhiteSpace(seg.EntryName) ? seg.EntryName.Trim() : "Entry";
+                    if (!categoryColumns.Contains(name, StringComparer.OrdinalIgnoreCase))
+                    {
+                        categoryColumns.Add(name);
+                    }
+
+                    if (!string.IsNullOrEmpty(seg.Content))
+                    {
+                        if (categoryMap.TryGetValue(name, out var existing))
+                            categoryMap[name] = existing + "\n" + seg.Content;
+                        else
+                            categoryMap[name] = seg.Content;
+                    }
+                }
+            }
+
+            rows.Add((log, categoryMap));
+        }
+
+        var sb = new StringBuilder();
+
+        // Header
+        var headers = new List<string>
+        {
+            "CreatedTime",
+            "SpokenTime",
+            "ConversationId",
+            "Pawn",
+            "Target",
+            "Response",
+            "State",
+            "TalkType",
+            "InteractionType",
+            "Model",
+            "Tokens",
+            "ElapsedMs"
+        };
+
+        foreach (var cat in categoryColumns)
+        {
+            headers.Add($"\"{EscapeCsv(cat)}\"");
+        }
+
+        sb.AppendLine(string.Join(",", headers));
+
+        // Rows
+        foreach (var (log, categoryMap) in rows)
+        {
+            var createdTime = (log.TalkRequest != null ? log.TalkRequest.CreatedTime : log.Timestamp).ToString("yyyy-MM-dd HH:mm:ss");
+            var spokenTime = log.SpokenTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "";
+            var target = log.TargetName;
+            if (string.IsNullOrEmpty(target) && log.TalkRequest != null)
+            {
+                var recipient = log.TalkRequest.Recipient?.LabelShort;
+                var initiator = log.TalkRequest.Initiator?.LabelShort;
+                if (!string.IsNullOrEmpty(recipient) && recipient != log.Name)
+                    target = recipient;
+                else if (!string.IsNullOrEmpty(initiator) && initiator != log.Name)
+                    target = initiator;
+                else
+                    target = "";
+            }
+            target ??= "";
+            var state = log.GetState().ToString();
+            var talkType = log.TalkRequest?.TalkType.ToString() ?? "";
+            var payload = ApiHistory.GetPayload(log) ?? log.Payload;
+            var model = payload?.Model ?? "";
+            var tokenCount = payload?.TokenCount.ToString() ?? "";
+
+            var rowValues = new List<string>
+            {
+                $"\"{EscapeCsv(createdTime)}\"",
+                $"\"{EscapeCsv(spokenTime)}\"",
+                log.ConversationId.ToString(),
+                $"\"{EscapeCsv(log.Name)}\"",
+                $"\"{EscapeCsv(target)}\"",
+                $"\"{EscapeCsv(log.Response)}\"",
+                $"\"{EscapeCsv(state)}\"",
+                $"\"{EscapeCsv(talkType)}\"",
+                $"\"{EscapeCsv(log.InteractionType)}\"",
+                $"\"{EscapeCsv(model)}\"",
+                tokenCount,
+                log.ElapsedMs.ToString()
+            };
+
+            foreach (var cat in categoryColumns)
+            {
+                categoryMap.TryGetValue(cat, out var content);
+                rowValues.Add($"\"{EscapeCsv(content ?? "")}\"");
+            }
+
+            sb.AppendLine(string.Join(",", rowValues));
+        }
+
+        return sb.ToString();
     }
 
     private static bool IsExcludedExportEntry(PromptMessageSegment segment)
